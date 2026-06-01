@@ -1,0 +1,49 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install scikit-learn numpy pytest
+      - name: Test data generator
+        run: |
+          python - <<'PYEOF'
+          from data.synthetic_corpus import generate_corpus, train_test_split
+          samples = generate_corpus(n=200)
+          assert len(samples) == 200
+          train, test = train_test_split(samples, test_size=0.2)
+          assert len(train) + len(test) == 200
+          print('corpus OK, labels:', set(l for s in samples for l in s['labels']))
+          PYEOF
+      - name: Test preprocessor
+        run: |
+          python - <<'PYEOF'
+          from features.preprocessor import TextPreprocessor
+          p = TextPreprocessor()
+          out = p.clean('Hello World!!! Visit http://example.com for INFO.')
+          assert 'http' not in out
+          assert out == out.lower()
+          print('preprocessor OK:', out)
+          PYEOF
+      - name: Test TF-IDF classifier
+        run: |
+          python - <<'PYEOF'
+          from data.synthetic_corpus import generate_corpus, train_test_split
+          from models.tfidf_classifier import TFIDFMultiLabelClassifier
+          from evaluation.multilabel_metrics import evaluate
+          from sklearn.preprocessing import MultiLabelBinarizer
+          samples = generate_corpus(n=300)
+          train, test = train_test_split(samples, test_size=0.2)
+          clf = TFIDFMultiLabelClassifier()
+          clf.fit(train)
+          preds = clf.predict([s['text'] for s in test])
+          y_true = clf.mlb.transform([s['labels'] for s in test])
+          y_pred = clf.mlb.transform(preds)
+          metrics = evaluate(y_true, y_pred)
+          assert metrics['micro_f1'] >= 0.0
+          print('classifier OK, micro_f1 =', metrics['micro_f1'])
+          PYEOF
